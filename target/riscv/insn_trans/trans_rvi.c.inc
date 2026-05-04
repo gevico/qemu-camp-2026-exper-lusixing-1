@@ -1223,3 +1223,119 @@ static bool trans_csrrci(DisasContext *ctx, arg_csrrci * a)
                              ctx->zero, ctx->zero, mask, ctx->zero);
     }
 }
+
+
+static bool trans_dma(DisasContext *ctx, arg_dma *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv dst = get_gpr(ctx, a->rd, EXT_NONE);
+    TCGv src = get_gpr(ctx, a->rs1, EXT_NONE);
+    TCGv grain = get_gpr(ctx, a->rs2, EXT_NONE);
+
+    gen_helper_dma(env, dst, src, grain);
+    return true;
+}
+
+static bool trans_sort(DisasContext *ctx, arg_sort *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv k = get_gpr(ctx, a->rd, EXT_NONE);      // 排序长度
+    TCGv arr = get_gpr(ctx, a->rs1, EXT_NONE);   // 数组地址
+    TCGv n = get_gpr(ctx, a->rs2, EXT_NONE);     // 数组总长度
+
+    gen_helper_sort(env, k, arr, n);
+    return true;
+}
+
+
+static bool trans_crush(DisasContext *ctx, arg_crush *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv dst = get_gpr(ctx, a->rd, EXT_NONE);    // 目标地址
+    TCGv src = get_gpr(ctx, a->rs1, EXT_NONE);   // 源地址
+    TCGv n = get_gpr(ctx, a->rs2, EXT_NONE);     // 源数组长度
+
+    gen_helper_crush(env, dst, src, n);
+    return true;
+}
+
+static bool trans_expand(DisasContext *ctx, arg_expand *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv dst = get_gpr(ctx, a->rd, EXT_NONE);   // 目标地址
+    TCGv src = get_gpr(ctx, a->rs1, EXT_NONE);  // 源地址（压缩包）
+    TCGv n   = get_gpr(ctx, a->rs2, EXT_NONE);  // 源数组长度（压缩包个数）
+
+    gen_helper_expand(env, dst, src, n);
+    return true;
+}
+
+static bool trans_vdot(DisasContext *ctx, arg_vdot *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv a_addr = get_gpr(ctx, a->rs1, EXT_NONE);
+    TCGv b_addr = get_gpr(ctx, a->rs2, EXT_NONE);
+    TCGv result = dest_gpr(ctx, a->rd);
+    
+    gen_helper_vdot(result, env, a_addr, b_addr);
+    gen_set_gpr(ctx, a->rd, result);
+    
+    return true;
+}
+
+
+static bool trans_vrelu(DisasContext *ctx, arg_vrelu *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv dst = get_gpr(ctx, a->rd, EXT_NONE);    // 目标地址
+    TCGv src = get_gpr(ctx, a->rs1, EXT_NONE);   // 源地址
+    TCGv n = get_gpr(ctx, a->rs2, EXT_NONE);     // 源数组长度
+
+    gen_helper_vrelu(env, dst, src, n);
+    return true;
+}
+
+
+static bool trans_vscale(DisasContext *ctx, arg_vscale *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv dst = get_gpr(ctx, a->rd, EXT_NONE);
+    TCGv src = get_gpr(ctx, a->rs1, EXT_NONE);
+    TCGv scale = get_gpr(ctx, a->rs2, EXT_NONE);
+    gen_helper_vscale(env, dst, src, scale);
+    return true;
+}
+
+
+static bool trans_vmax(DisasContext *ctx, arg_vmax *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv src = get_gpr(ctx, a->rs1, EXT_NONE);
+    TCGv n   = get_gpr(ctx, a->rs2, EXT_NONE);
+    TCGv result = dest_gpr(ctx, a->rd);
+
+    gen_helper_vmax(result, env, src, n);
+    gen_set_gpr(ctx, a->rd, result);
+    return true;
+}
+
+static bool trans_gemm(DisasContext *ctx, arg_gemm *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv c = get_gpr(ctx, a->rd, EXT_NONE);
+    TCGv a_mat = get_gpr(ctx, a->rs1, EXT_NONE);
+    TCGv b_mat = get_gpr(ctx, a->rs2, EXT_NONE);
+
+    gen_helper_gemm(env, c, a_mat, b_mat);
+    return true;
+}
+
+static bool trans_vadd(DisasContext *ctx, arg_vadd *a)
+{
+    TCGv_ptr env = tcg_env;
+    TCGv c = get_gpr(ctx, a->rd, EXT_NONE);
+    TCGv a_vec = get_gpr(ctx, a->rs1, EXT_NONE);
+    TCGv b_vec = get_gpr(ctx, a->rs2, EXT_NONE);
+    gen_helper_vadd(env, c, a_vec, b_vec);
+    return true;
+}

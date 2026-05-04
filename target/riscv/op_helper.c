@@ -781,3 +781,276 @@ done:
 }
 
 #endif /* !CONFIG_USER_ONLY */
+
+
+
+void HELPER(dma)(CPURISCVState *env, target_ulong dst_addr,
+                 target_ulong src_addr, target_ulong grain)
+{
+    int n;
+    switch (grain) {
+    case 0: n = 8; break;
+    case 1: n = 16; break;
+    case 2: n = 32; break;
+    default:
+        return; // 非法 grain，忽略或可触发异常
+    }
+
+    int total = n * n;
+    uint32_t *src_buf = g_new(uint32_t, total);
+    uint32_t *dst_buf = g_new(uint32_t, total);
+
+    // 读取源矩阵（4 字节 float 按行存储）
+    for (int i = 0; i < total; i++) {
+        src_buf[i] = cpu_ldl_data(env, src_addr + i * 4);
+    }
+
+    // 转置
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            dst_buf[j * n + i] = src_buf[i * n + j];
+        }
+    }
+
+    // 写入目标矩阵
+    for (int i = 0; i < total; i++) {
+        cpu_stl_data(env, dst_addr + i * 4, dst_buf[i]);
+    }
+
+    g_free(src_buf);
+    g_free(dst_buf);
+}
+
+
+void HELPER(sort)(CPURISCVState *env, target_ulong k,
+                  target_ulong arr_addr, target_ulong n)
+{
+    // 注意参数顺序：custom_sort(k, arr, n) -> rs1=k, rs2=arr, rd=n
+    // 但指令格式是 rd, rs1, rs2，测试代码用了 k, arr, n
+    // 实际映射：rd = k, rs1 = arr_addr, rs2 = n
+    // 所以这里的参数：rd(k), rs1(arr), rs2(n)
+    
+    int sort_len = (int)k;
+    int array_size = (int)n;
+    
+    // 边界检查
+    if (sort_len > array_size) {
+        sort_len = array_size;
+    }
+    if (sort_len <= 1) {
+        return;
+    }
+    
+    // 读取整个数组
+    int *hw_buf = g_new(int, array_size);
+    for (int i = 0; i < array_size; i++) {
+        hw_buf[i] = cpu_ldl_data(env, arr_addr + i * 4);
+    }
+    
+    // 冒泡排序前 sort_len 个元素
+    for (int i = 0; i < sort_len - 1; i++) {
+        for (int j = 0; j < sort_len - i - 1; j++) {
+            if (hw_buf[j] > hw_buf[j + 1]) {
+                int tmp = hw_buf[j];
+                hw_buf[j] = hw_buf[j + 1];
+                hw_buf[j + 1] = tmp;
+            }
+        }
+    }
+    
+    // 写回数组（只有前 sort_len 个被排序，后面的保持不变）
+    for (int i = 0; i < array_size; i++) {
+        cpu_stl_data(env, arr_addr + i * 4, hw_buf[i]);
+    }
+    
+    g_free(hw_buf);
+}
+
+
+void HELPER(crush)(CPURISCVState *env, target_ulong dst_addr,
+                   target_ulong src_addr, target_ulong n)
+{
+    int len = (int)n;          // 源数组长度（字节数）
+    int out_len = (len + 1) / 2;   // 目标数组长度（半字节数）
+
+    // 分配临时缓冲区
+    uint8_t *src_buf = g_new(uint8_t, len);
+    uint8_t *dst_buf = g_new0(uint8_t, out_len);
+
+    // 读取源数组
+    for (int i = 0; i < len; i++) {
+        src_buf[i] = cpu_ldub_data(env, src_addr + i);
+    }
+
+    // 压缩：每两个源字节的低4位打包到一个目标字节
+    for (int i = 0; i < len / 2; i++) {
+        uint8_t low = src_buf[2 * i] & 0x0F;
+        uint8_t high = src_buf[2 * i + 1] & 0x0F;
+        dst_buf[i] = low | (high << 4);
+    }
+    if (len & 1) {
+        // 奇数个源字节，最后一个只取低4位，放在目标最后一个字节的低4位
+        dst_buf[out_len - 1] = src_buf[len - 1] & 0x0F;
+    }
+
+    // 写回目标数组
+    for (int i = 0; i < out_len; i++) {
+        cpu_stb_data(env, dst_addr + i, dst_buf[i]);
+    }
+
+    g_free(src_buf);
+    g_free(dst_buf);
+}
+
+
+void HELPER(expand)(CPURISCVState *env, target_ulong dst_addr,
+                    target_ulong src_addr, target_ulong n)
+{
+    int src_len = (int)n;          // 源数组长度（压缩包的数量）
+    int dst_len = src_len * 2;     // 目标数组长度（半字节数量）
+
+    // 分配缓冲区
+    uint8_t *src_buf = g_new(uint8_t, src_len);
+    uint8_t *dst_buf = g_new0(uint8_t, dst_len);
+
+    // 读取压缩包
+    for (int i = 0; i < src_len; i++) {
+        src_buf[i] = cpu_ldub_data(env, src_addr + i);
+    }
+
+    // 解压：每个源字节拆成两个 4-bit 低/高半字节
+    for (int i = 0; i < src_len; i++) {
+        dst_buf[2 * i]     = src_buf[i] & 0x0F;      // 低4位
+        dst_buf[2 * i + 1] = (src_buf[i] >> 4) & 0x0F; // 高4位
+    }
+
+    // 写回目标数组
+    for (int i = 0; i < dst_len; i++) {
+        cpu_stb_data(env, dst_addr + i, dst_buf[i]);
+    }
+
+    g_free(src_buf);
+    g_free(dst_buf);
+}
+
+target_ulong HELPER(vdot)(CPURISCVState *env, target_ulong a_addr, target_ulong b_addr)
+{
+    const int VEC_LEN = 16;
+    uint64_t acc = 0;
+    int32_t a_val, b_val;
+    
+    // 累加点积
+    for (int i = 0; i < VEC_LEN; i++) {
+        a_val = cpu_ldl_data(env, a_addr + i * 4);
+        b_val = cpu_ldl_data(env, b_addr + i * 4);
+        acc += (uint64_t)a_val * (uint64_t)b_val;
+    }
+    
+    // 返回 64 位结果（RISC-V 中 long 可能是 64 位）
+    return (target_ulong)acc;
+}
+
+
+void HELPER(vrelu)(CPURISCVState *env, target_ulong dst_addr,
+                   target_ulong src_addr, target_ulong n)
+{
+    int len = (int)n;  // 数组长度（元素个数）
+    
+    // 为了支持原地操作（dst == src），需要先读取全部数据到临时缓冲区
+    // 因为 QEMU 的内存访问是直接操作 guest 内存，如果原地修改时边读边写会导致错误
+    int32_t *tmp_buf = g_new(int32_t, len);
+    
+    // 读取源数组
+    for (int i = 0; i < len; i++) {
+        tmp_buf[i] = (int32_t)cpu_ldl_data(env, src_addr + i * 4);
+    }
+    
+    // 应用 ReLU：max(0, x)
+    for (int i = 0; i < len; i++) {
+        int32_t val = tmp_buf[i];
+        if (val < 0) val = 0;
+        cpu_stl_data(env, dst_addr + i * 4, val);
+    }
+    
+    g_free(tmp_buf);
+}
+
+void HELPER(vscale)(CPURISCVState *env, target_ulong dst_addr,
+                    target_ulong src_addr, target_ulong scale)
+{
+    int64_t s = (int64_t)scale;
+    for (int i = 0; i < 16; i++) {
+        int32_t val = cpu_ldl_data(env, src_addr + i * 4);
+        int64_t prod = (int64_t)val * s;
+        cpu_stl_data(env, dst_addr + i * 4, (int32_t)prod);
+    }
+}
+
+
+target_ulong HELPER(vmax)(CPURISCVState *env, target_ulong src_addr, target_ulong n)
+{
+    int len = (int)n;
+    if (len <= 0) {
+        return 0;
+    }
+    int32_t max_val = cpu_ldl_data(env, src_addr);
+    for (int i = 1; i < len; i++) {
+        int32_t val = cpu_ldl_data(env, src_addr + i * 4);
+        if (val > max_val) {
+            max_val = val;
+        }
+    }
+    /* 符号扩展到 target_ulong (64-bit) */
+    return (target_ulong)(int64_t)max_val;
+}
+
+
+void HELPER(gemm)(CPURISCVState *env, target_ulong c_addr,
+                  target_ulong a_addr, target_ulong b_addr)
+{
+    const int DIM = 4;
+    int32_t a[4][4], b[4][4], c[4][4];
+
+    // 读取矩阵 A (row-major)
+    for (int i = 0; i < DIM; i++) {
+        for (int j = 0; j < DIM; j++) {
+            a[i][j] = cpu_ldl_data(env, a_addr + (i * DIM + j) * 4);
+        }
+    }
+
+    // 读取矩阵 B
+    for (int i = 0; i < DIM; i++) {
+        for (int j = 0; j < DIM; j++) {
+            b[i][j] = cpu_ldl_data(env, b_addr + (i * DIM + j) * 4);
+        }
+    }
+
+    // 矩阵乘法 C = A * B
+    for (int i = 0; i < DIM; i++) {
+        for (int j = 0; j < DIM; j++) {
+            int64_t sum = 0;
+            for (int k = 0; k < DIM; k++) {
+                sum += (int64_t)a[i][k] * (int64_t)b[k][j];
+            }
+            c[i][j] = (int32_t)sum;
+        }
+    }
+
+    // 写回矩阵 C
+    for (int i = 0; i < DIM; i++) {
+        for (int j = 0; j < DIM; j++) {
+            cpu_stl_data(env, c_addr + (i * DIM + j) * 4, c[i][j]);
+        }
+    }
+}
+
+void HELPER(vadd)(CPURISCVState *env, target_ulong c_addr,
+                  target_ulong a_addr, target_ulong b_addr)
+{
+    for (int i = 0; i < 16; i++) {
+        int32_t av = cpu_ldl_data(env, a_addr + i * 4);
+        int32_t bv = cpu_ldl_data(env, b_addr + i * 4);
+        int32_t cv = av + bv;
+        cpu_stl_data(env, c_addr + i * 4, cv);
+    }
+}

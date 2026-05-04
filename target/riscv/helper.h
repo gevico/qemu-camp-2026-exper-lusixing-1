@@ -1,6 +1,19 @@
 /* Exceptions */
 DEF_HELPER_2(raise_exception, noreturn, env, i32)
 
+
+/* cpu new instructions */
+DEF_HELPER_4(dma, void, env, tl, tl, tl)
+DEF_HELPER_4(sort, void, env, tl, tl, tl) 
+DEF_HELPER_4(crush, void, env, tl, tl, tl)
+DEF_HELPER_4(expand, void, env, tl, tl, tl)
+DEF_HELPER_3(vdot, tl, env, tl, tl)
+DEF_HELPER_4(vrelu, void, env, tl, tl, tl)
+DEF_HELPER_4(vscale, void, env, tl, tl, tl)
+DEF_HELPER_3(vmax, tl, env, tl, tl)
+DEF_HELPER_4(gemm, void, env, tl, tl, tl)
+DEF_HELPER_4(vadd, void, env, tl, tl, tl)
+
 /* Floating Point - rounding mode */
 DEF_HELPER_FLAGS_2(set_rounding_mode, TCG_CALL_NO_WG, void, env, i32)
 DEF_HELPER_FLAGS_2(set_rounding_mode_chkfrm, TCG_CALL_NO_WG, void, env, i32)
